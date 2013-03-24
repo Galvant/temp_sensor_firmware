@@ -25,6 +25,8 @@
              normal operation, the board will query sensors with address from 1 to this value.
     change : Change the I2C address of a specific module. You specifiy the old and the new
              address, and the Arduino will take care of it.
+    api:     Toggle between being in API mode and not. This mode turns off all non-required
+             strings being sent from the Arduino to the PC. 
     exit :   Exit admin mode and start normal operation.
 */
 
@@ -39,6 +41,9 @@
 #define EEPROM_CODE_ADDRESS 0x00
 #define EEPROM_SENSOR_COUNT_ADDRESS 0x01
 
+#define EEPROM_API_MODE_ADDRESS 0x02
+#define EEPROM_API_MODE_CODE 0xFF
+
 #define MAX_SENSOR_COUNT 100
 
 LiquidCrystal lcd(12, 11, 7, 8, 9, 10);
@@ -47,6 +52,7 @@ int sensorCount = 0;
 byte eepromValue = 0;
 String incomingCmd = "";
 char incomingByte[10];
+boolean apiMode = false;
 
 void setup()
 {
@@ -62,15 +68,19 @@ void setup()
   eepromValue = EEPROM.read(EEPROM_CODE_ADDRESS);
   if (eepromValue == EEPROM_CODE) {
     sensorCount = EEPROM.read(EEPROM_SENSOR_COUNT_ADDRESS);
-    Serial.println("Valid EEPROM");
-    Serial.print("Current sensor count: ");
-    Serial.print(sensorCount, DEC);
-    Serial.print("\n");
+    if (EEPROM.read(EEPROM_API_MODE_ADDRESS) == EEPROM_API_MODE_CODE) {
+      apiMode = true;
+    }
+    else {
+      apiMode = false;
+    }
   }
   else { // EEPROM not valid, so initialize it
     EEPROM.write(EEPROM_CODE_ADDRESS, EEPROM_CODE);
     EEPROM.write(EEPROM_SENSOR_COUNT_ADDRESS, 0x00); // Init with zero sensors
     sensorCount = 0;
+    EEPROM.write(EEPROM_API_MODE_ADDRESS, 0x00); // Init not in API mode by default
+    apiMode = false;
   }
   
   // Init push buttons
@@ -98,19 +108,23 @@ void adminMode()
   int i = 0;
   boolean inAdminMode = true;
   
-  Serial.print("\n");    
-  Serial.print("==Entering admin mode==");
+  //Serial.print("\n");    
+  if (!apiMode) { Serial.print("==Entering admin mode=="); }
   
   while(inAdminMode == true) {
-    Serial.print("\n");
-    Serial.println("Please enter a command:");
+    if (!apiMode) { 
+      Serial.print("\n");
+      Serial.println("Please enter a command:");
+    }
     incomingCmd = "";
     while (incomingCmd.equals("")) {
       incomingCmd = readLine();
     }
-    Serial.print("Entered command: ");
-    Serial.print(incomingCmd);
-    Serial.print("\n");
+    if (!apiMode) { 
+      Serial.print("Entered command: ");
+      Serial.print(incomingCmd);
+      Serial.print("\n");
+    }
   
     // --- Parse admin mode command --- //
     if (incomingCmd.substring(0,3).equalsIgnoreCase("add")) {
@@ -125,6 +139,9 @@ void adminMode()
     else if (incomingCmd.substring(0,4).equalsIgnoreCase("exit")) {
       Serial.println("Exiting admin mode.");
       inAdminMode = false;
+    }
+    else if (incomingCmd.substring(0,3).equalsIgnoreCase("api")) {
+      apiMode = !apiMode;
     }
     else {
       Serial.println("Bad command.");
@@ -147,20 +164,22 @@ void menuAddSensor() {
     Serial.println("System at maximum allowed sensor modules.");
   }
   else {
-    Serial.println("Adding new sensor.");
-    Serial.print("Current sensor count: ");
-    Serial.println(sensorCount, DEC);
-    Serial.println("This mode is for adding a brand new default sensor to the system.");
-    Serial.print("New sensor will be given address of: ");
+    if (!apiMode) {
+      Serial.println("Adding new sensor.");
+      Serial.print("Current sensor count: ");
+      Serial.println(sensorCount, DEC);
+      Serial.println("This mode is for adding a brand new default sensor to the system.");
+      Serial.print("New sensor will be given address of: ");
+    }
     Serial.println(sensorCount+1, DEC);
     if(confirm()) {
       sensorCount++;
       EEPROM.write(EEPROM_SENSOR_COUNT_ADDRESS, sensorCount);
       setConfigRegister(39, sensorCount);
-      Serial.println("Sensor has been updated.");
+      if (!apiMode) { Serial.println("Sensor has been updated."); }
     }
     else{
-      Serial.println("Cancel adding new sensor.");
+      if (!apiMode) { Serial.println("Cancel adding new sensor."); }
     }
   }
 }
@@ -169,8 +188,10 @@ void menuChangeAddress() {
   int newAddress = -1;
   int oldAddress = -1;
   
-  Serial.println("Change I2C address of attached sensor.");
-  Serial.print("Enter old I2C address (new sensor default is 39): ");
+  if (!apiMode) { 
+    Serial.println("Change I2C address of attached sensor.");
+    Serial.print("Enter old I2C address (new sensor default is 39): ");
+  }
   incomingCmd = "";
   while (incomingCmd.equals("")) {
     incomingCmd = readLine();
@@ -178,7 +199,7 @@ void menuChangeAddress() {
     oldAddress = atoi((char*)(&(incomingByte[0])));
   }
   Serial.println(oldAddress, DEC);
-  Serial.print("Enter new I2C address: ");
+  if (!apiMode) { Serial.print("Enter new I2C address: "); }
   incomingCmd = "";
   while (incomingCmd.equals("")) {
     incomingCmd = readLine();
@@ -187,58 +208,71 @@ void menuChangeAddress() {
   }
   Serial.println(newAddress, DEC);
   
-  setConfigRegister(oldAddress, newAddress);
+  if(confirm()) {
+    setConfigRegister(oldAddress, newAddress);
+  }
+  else {
+    if (!apiMode) { Serial.println("Cancelling address change."); }
+  }
 }
 
 void menuChangeSensorCount() {
   int newSensorCount = -1;
   
-  Serial.println("Override current sensor count.");
-  Serial.print("Current sensor count is at: ");
+  if (!apiMode) { 
+    Serial.println("Override current sensor count.");
+    Serial.print("Current sensor count is at: ");
+  }
   Serial.println(sensorCount, DEC);
-  Serial.println("Enter new number of sensors. Note you will need to have already set these up: ");
+  if (!apiMode) { 
+    Serial.println("Enter new number of sensors. Note you will need to have already set these up: ");
+  }
   incomingCmd = "";
   while (incomingCmd.equals("")) {
     incomingCmd = readLine();
     incomingCmd.toCharArray(incomingByte,10);
     newSensorCount = atoi((char*)(&(incomingByte[0])));
   }
-  Serial.print("New sensor count is: ");
+  if (!apiMode) { Serial.print("New sensor count is: "); }
   Serial.println(newSensorCount, DEC);
   if (confirm()) {
-    Serial.print("Sensor count confirmed for: ");
-    Serial.println(newSensorCount, DEC);
+    if (!apiMode) { 
+      Serial.print("Sensor count confirmed for: ");
+      Serial.println(newSensorCount, DEC);
+    }
     EEPROM.write(EEPROM_SENSOR_COUNT_ADDRESS, newSensorCount);
     sensorCount = newSensorCount;
   }
   else {
-    Serial.println("Aborting changing sensor count.");
+    if (!apiMode) { Serial.println("Aborting changing sensor count."); }
   }
 }
 
 boolean confirm() {
   boolean value = false;
-  Serial.print("Confirm? (y/n): ");
+  if (!apiMode) { Serial.print("Confirm? (y/n): "); }
   incomingCmd = "";
   while (incomingCmd.equals("")) {
     incomingCmd = readLine();
   }
   if (incomingCmd.substring(0,1).equalsIgnoreCase("y")) {
     value = true;
-    Serial.println("y");
+    if (!apiMode) { Serial.println("y"); }
   }
   else {
-    Serial.println("n");
+    if (!apiMode) { Serial.println("n"); }
   }
   return value;
 }
 
 void setConfigRegister(int oldAddress, int newAddress)
 {
-  Serial.print("Changing I2C addresses: ");
-  Serial.print(oldAddress, DEC);
-  Serial.print(" to ");
-  Serial.println(newAddress, DEC);
+  if (!apiMode) { 
+    Serial.print("Changing I2C addresses: ");
+    Serial.print(oldAddress, DEC);
+    Serial.print(" to ");
+    Serial.println(newAddress, DEC);
+  }
   byte a, b, c; // Dummy temp variables
   byte start_cmd[] = {0xA0,0x00,0x00};
   byte fetch_status_register[] = {0x1C,0x00,0x00};
